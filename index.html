@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสั่งอาหาร</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background-color: #fef2f2;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .item-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #fee2e2;
+        }
+        .item-card:last-child {
+            border-bottom: none;
+        }
+        .item-name {
+            font-weight: 500;
+        }
+        .quantity-control {
+            display: flex;
+            align-items: center;
+        }
+        .quantity-btn {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            border: none;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 9999px;
+            font-size: 1.25rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .quantity-btn:hover {
+            background-color: #fecaca;
+        }
+        .quantity-display {
+            width: 40px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .total-price {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        .disabled-btn {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .bill-item {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dashed #ccc;
+            padding: 8px 0;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+        }
+    </style>
+</head>
+<body class="bg-red-50 flex items-center justify-center min-h-screen">
+    <div class="container bg-white p-8 rounded-xl shadow-lg">
+        <!-- ปุ่มประวัติการสั่งซื้อ -->
+        <button id="history-btn" class="w-full bg-red-800 text-white font-bold py-2 mb-4 rounded-lg hover:bg-red-900 transition-colors">
+            ดูประวัติการสั่งซื้อ
+        </button>
+
+        <!-- หน้าแรก: รายการอาหาร -->
+        <div id="menu-page" class="page">
+            <h1 class="text-3xl font-bold mb-6 text-center text-red-800">NPอาหารแช่แข็ง</h1>
+            <div id="menu-items" class="space-y-4">
+                <!-- เมนูจะถูกเพิ่มมาที่นี่โดย JavaScript -->
+            </div>
+            <div class="border-t-2 border-dashed border-red-300 mt-6 pt-6 flex justify-between items-center">
+                <div class="text-xl font-semibold text-red-700">รวมราคา:</div>
+                <div id="total-price-menu" class="total-price text-red-700">0 บาท</div>
+            </div>
+            <button id="summary-btn" class="w-full bg-red-700 text-white font-bold py-3 mt-6 rounded-lg hover:bg-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                สรุปรายการ
+            </button>
+        </div>
+
+        <!-- หน้าสรุปรายการ -->
+        <div id="summary-page" class="page hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center text-red-800">สรุปรายการสั่งซื้อ</h2>
+            <div id="summary-items" class="space-y-4">
+                <!-- สรุปรายการจะถูกเพิ่มมาที่นี่โดย JavaScript -->
+            </div>
+            <div class="border-t-2 border-dashed border-red-300 mt-6 pt-6 flex justify-between items-center">
+                <div class="text-xl font-semibold text-red-700">ยอดรวม:</div>
+                <div id="total-price-summary" class="total-price text-red-700">0 บาท</div>
+            </div>
+            <div class="flex justify-between mt-6 space-x-4">
+                <button id="back-to-menu-btn" class="w-1/2 bg-red-200 text-red-700 font-bold py-3 rounded-lg hover:bg-red-300 transition-colors">
+                    ย้อนกลับ
+                </button>
+                <button id="delivery-btn" class="w-1/2 bg-red-700 text-white font-bold py-3 rounded-lg hover:bg-red-800 transition-colors">
+                    ยืนยันและดำเนินการต่อ
+                </button>
+            </div>
+        </div>
+
+        <!-- หน้าข้อมูลการจัดส่ง -->
+        <div id="delivery-page" class="page hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center text-red-800">ข้อมูลการจัดส่ง</h2>
+            <form id="delivery-form" class="space-y-4">
+                <div>
+                    <label for="name" class="block text-red-700 font-semibold mb-2">ชื่อ - นามสกุล</label>
+                    <input type="text" id="name" name="name" class="w-full p-3 rounded-lg border border-red-300 focus:outline-none focus:border-red-500" required>
+                </div>
+                <div>
+                    <label for="phone" class="block text-red-700 font-semibold mb-2">เบอร์โทรศัพท์</label>
+                    <input type="tel" id="phone" name="phone" class="w-full p-3 rounded-lg border border-red-300 focus:outline-none focus:border-red-500" required>
+                </div>
+                <div>
+                    <label for="address" class="block text-red-700 font-semibold mb-2">ที่อยู่จัดส่ง</label>
+                    <textarea id="address" name="address" rows="4" class="w-full p-3 rounded-lg border border-red-300 focus:outline-none focus:border-red-500" required></textarea>
+                </div>
+                <button type="submit" class="w-full bg-red-700 text-white font-bold py-3 rounded-lg hover:bg-red-800 transition-colors">
+                    ดำเนินการชำระเงิน
+                </button>
+            </form>
+            <button id="back-to-summary-btn" class="w-full bg-red-200 text-red-700 font-bold py-3 mt-6 rounded-lg hover:bg-red-300 transition-colors">
+                ย้อนกลับ
+            </button>
+        </div>
+
+        <!-- หน้าชำระเงิน -->
+        <div id="payment-page" class="page hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center text-red-800">เลือกวิธีการชำระเงิน</h2>
+            <button id="back-to-delivery-btn" class="w-full bg-red-200 text-red-700 font-bold py-3 mb-4 rounded-lg hover:bg-red-300 transition-colors">
+                ย้อนกลับ
+            </button>
+            <div class="space-y-4">
+                <button id="pay-cod" class="w-full bg-red-600 text-white font-bold py-4 rounded-lg hover:bg-red-700 transition-colors">
+                    จ่ายเงินสดปลายทาง (COD)
+                </button>
+                <button id="pay-transfer" class="w-full bg-red-700 text-white font-bold py-4 rounded-lg hover:bg-red-800 transition-colors">
+                    สแกน QR Code / โอนเงิน
+                </button>
+            </div>
+            <div id="qr-code-section" class="hidden mt-8 text-center">
+                <p class="text-lg font-semibold mb-4 text-red-700">สแกน QR Code เพื่อชำระเงิน</p>
+                <img src="https://placehold.co/250x250/b91c1c/FFFFFF?text=QR+Code" alt="QR Code" class="mx-auto rounded-lg shadow-md mb-4">
+                <p class="text-sm text-red-500">กรุณาโอนเงินตามยอดรวมและแสดงหลักฐานการโอนให้กับพนักงาน</p>
+                <div class="mt-4">
+                    <label for="slip-upload" class="block text-red-700 font-semibold mb-2">อัปโหลดสลิป</label>
+                    <input type="file" id="slip-upload" class="w-full text-sm text-red-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-red-50 file:text-red-700
+                        hover:file:bg-red-100" />
+                </div>
+                <button id="confirm-payment-btn" class="w-full bg-red-700 text-white font-bold py-3 mt-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    ยืนยันการชำระเงิน
+                </button>
+            </div>
+        </div>
+
+        <!-- หน้าใบเสร็จรับเงิน -->
+        <div id="bill-page" class="page hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center text-red-800">ใบเสร็จรับเงิน</h2>
+            <div class="text-center mb-6">
+                <h3 class="text-2xl font-bold text-red-900">NP อาหารแช่แข็ง</h3>
+            </div>
+            <div id="bill-details" class="space-y-4">
+                <div class="text-sm text-gray-500">
+                    <span id="bill-date" class="font-bold text-gray-800"></span>
+                </div>
+                <div class="text-sm text-gray-500">
+                    หมายเลขคำสั่งซื้อ: <span id="bill-order-id" class="font-bold text-gray-800"></span>
+                </div>
+                <div class="border-t border-b border-red-200 py-4 space-y-2">
+                    <h3 class="text-lg font-semibold text-red-700 mb-2">ข้อมูลลูกค้า</h3>
+                    <div class="text-sm text-gray-600">
+                        ชื่อ-นามสกุล: <span id="bill-customer-name" class="font-semibold text-gray-800"></span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        เบอร์โทรศัพท์: <span id="bill-customer-phone" class="font-semibold text-gray-800"></span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        ที่อยู่จัดส่ง: <span id="bill-customer-address" class="font-semibold text-gray-800"></span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        วิธีการชำระเงิน: <span id="bill-payment-method" class="font-semibold text-gray-800"></span>
+                    </div>
+                </div>
+
+                <div class="border-t border-b border-red-200 py-4">
+                    <h3 class="text-lg font-semibold text-red-700 mb-2">รายการสั่งซื้อ</h3>
+                    <div id="bill-items-container" class="space-y-2 text-red-600">
+                        <!-- รายการอาหารจะถูกเพิ่มมาที่นี่โดย JavaScript -->
+                    </div>
+                </div>
+                <div class="flex justify-between items-center text-red-800 font-semibold">
+                    <div>ยอดรวม</div>
+                    <div id="bill-subtotal">0 บาท</div>
+                </div>
+                <div class="flex justify-between items-center text-red-800 font-semibold">
+                    <div>ค่าจัดส่ง</div>
+                    <div id="bill-delivery-fee">0 บาท</div>
+                </div>
+                <div class="flex justify-between items-center text-xl font-bold text-red-800 border-t-2 border-dashed border-red-300 pt-2">
+                    <div>ยอดรวมสุทธิ</div>
+                    <div id="bill-grand-total">0 บาท</div>
+                </div>
+                <div id="bill-slip-container" class="mt-8 hidden text-center">
+                    <p class="text-lg font-semibold text-red-700 mb-2">สลิปหลักฐานการโอนเงิน</p>
+                    <img id="bill-slip-image" src="" alt="สลิปหลักฐาน" class="mx-auto rounded-lg shadow-md max-w-full h-auto">
+                </div>
+                <div class="mt-8 text-center">
+                    <p class="text-lg font-semibold text-red-700">สแกนเพื่อสะสมแต้ม</p>
+                    <img src="https://placehold.co/150x150/b91c1c/FFFFFF?text=QR+Point" alt="QR Code for points" class="mx-auto mt-2 rounded-lg">
+                </div>
+            </div>
+            <button id="back-from-bill-btn" class="w-full bg-red-200 text-red-700 font-bold py-3 mt-6 rounded-lg hover:bg-red-300 transition-colors">
+                กลับสู่หน้าหลัก
+            </button>
+        </div>
+
+        <!-- หน้าประวัติการสั่งซื้อ -->
+        <div id="history-page" class="page hidden">
+            <h2 class="text-3xl font-bold mb-6 text-center text-red-800">ประวัติการสั่งซื้อ</h2>
+            <div id="history-items" class="space-y-4">
+                <p class="text-center text-red-500">กำลังโหลดประวัติ...</p>
+            </div>
+            <button id="back-from-history-btn" class="w-full bg-red-200 text-red-700 font-bold py-3 mt-6 rounded-lg hover:bg-red-300 transition-colors">
+                กลับสู่หน้าหลัก
+            </button>
+        </div>
+        
+        <!-- Modal สำหรับข้อความแจ้งเตือน -->
+        <div id="info-modal" class="modal hidden">
+            <div class="modal-content text-center">
+                <h3 id="modal-title" class="text-xl font-bold text-red-800 mb-4"></h3>
+                <p id="modal-message" class="text-gray-700 mb-6"></p>
+                <button id="modal-close-btn" class="bg-red-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-800">ตกลง</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // นำเข้า Firebase และ Firestore SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // เมนูอาหาร
+        const menuItems = [
+            { name: "เซตหมูกระทะโบราณ", price: 159 },
+            { name: "วุ้นเส้น", price: 10 },
+            { name: "หมูนุ่ม", price: 20 },
+            { name: "หมูสามชั้น", price: 30 },
+            { name: "มาม่า (พิเศษ)", price: 10 },
+            { name: "ตับ (พิเศษ)", price: 20 },
+            { name: "ไข่", price: 10 },
+            { name: "ชุดผัก", price: 25 },
+            { name: "น้ำจิ้ม", price: 35 },
+            { name: "เต้าหู้ไข่", price: 10 }
+        ];
+
+        // วัตถุเก็บรายการที่สั่งซื้อ
+        let order = {};
+        let deliveryInfo = {};
+        const DELIVERY_FEE = 50;
+
+        // อ้างอิงถึงส่วนประกอบต่างๆ ในหน้าเว็บ
+        const menuPage = document.getElementById('menu-page');
+        const summaryPage = document.getElementById('summary-page');
+        const deliveryPage = document.getElementById('delivery-page');
+        const paymentPage = document.getElementById('payment-page');
+        const billPage = document.getElementById('bill-page');
+        const historyPage = document.getElementById('history-page');
+        const infoModal = document.getElementById('info-modal');
+        
+        const menuContainer = document.getElementById('menu-items');
+        const totalPriceMenuElement = document.getElementById('total-price-menu');
+        const summaryItemsContainer = document.getElementById('summary-items');
+        const totalPriceSummaryElement = document.getElementById('total-price-summary');
+        const qrCodeSection = document.getElementById('qr-code-section');
+        const slipUpload = document.getElementById('slip-upload');
+        const confirmPaymentBtn = document.getElementById('confirm-payment-btn');
+        const historyItemsContainer = document.getElementById('history-items');
+
+        const billOrderId = document.getElementById('bill-order-id');
+        const billDate = document.getElementById('bill-date');
+        const billCustomerName = document.getElementById('bill-customer-name');
+        const billCustomerPhone = document.getElementById('bill-customer-phone');
+        const billCustomerAddress = document.getElementById('bill-customer-address');
+        const billPaymentMethod = document.getElementById('bill-payment-method');
+        const billItemsContainer = document.getElementById('bill-items-container');
+        const billSubtotal = document.getElementById('bill-subtotal');
+        const billDeliveryFee = document.getElementById('bill-delivery-fee');
+        const billGrandTotal = document.getElementById('bill-grand-total');
+        const billSlipContainer = document.getElementById('bill-slip-container');
+        const billSlipImage = document.getElementById('bill-slip-image');
+
+        const summaryBtn = document.getElementById('summary-btn');
+        const backToMenuBtn = document.getElementById('back-to-menu-btn');
+        const deliveryBtn = document.getElementById('delivery-btn');
+        const deliveryForm = document.getElementById('delivery-form');
+        const payTransferBtn = document.getElementById('pay-transfer');
+        const payCodBtn = document.getElementById('pay-cod');
+        const historyBtn = document.getElementById('history-btn');
+        const backFromHistoryBtn = document.getElementById('back-from-history-btn');
+        const backFromBillBtn = document.getElementById('back-from-bill-btn');
+        const backToSummaryBtn = document.getElementById('back-to-summary-btn');
+        const backToDeliveryBtn = document.getElementById('back-to-delivery-btn');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        // การตั้งค่า Firebase และการยืนยันตัวตน
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        let userId;
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined') {
+                    const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
+                    userId = userCredential.user.uid;
+                } else {
+                    const userCredential = await signInAnonymously(auth);
+                    userId = userCredential.user.uid;
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error: ", error);
+                showModal("ข้อผิดพลาด", "ไม่สามารถเชื่อมต่อกับฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+            }
+        }
+        
+        // ฟังก์ชันแสดง Modal
+        function showModal(title, message) {
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            infoModal.classList.remove('hidden');
+        }
+
+        // ฟังก์ชันสร้างหมายเลขคำสั่งซื้อสุ่ม 6 หลัก
+        function generateOrderId() {
+            return Math.floor(100000 + Math.random() * 900000);
+        }
+
+        // ฟังก์ชันเพื่อซ่อน/แสดงหน้า
+        function showPage(pageId) {
+            const pages = [menuPage, summaryPage, deliveryPage, paymentPage, billPage, historyPage];
+            pages.forEach(page => page.classList.add('hidden'));
+            document.getElementById(pageId).classList.remove('hidden');
+        }
+
+        // ฟังก์ชันแสดงรายการเมนู
+        function renderMenuItems() {
+            menuContainer.innerHTML = '';
+            let hasSelectedItem = false;
+            menuItems.forEach(item => {
+                const quantity = order[item.name] || 0;
+                if (quantity > 0) hasSelectedItem = true;
+                const itemHtml = `
+                    <div class="item-card bg-red-50 rounded-lg p-3">
+                        <div class="flex-grow">
+                            <div class="item-name text-red-700">${item.name}</div>
+                            <div class="text-sm text-red-500">${item.price} บาท</div>
+                        </div>
+                        <div class="quantity-control space-x-2">
+                            <button class="quantity-btn decrease-btn" data-name="${item.name}">-</button>
+                            <span class="quantity-display text-red-800">${quantity}</span>
+                            <button class="quantity-btn increase-btn" data-name="${item.name}">+</button>
+                        </div>
+                    </div>
+                `;
+                menuContainer.innerHTML += itemHtml;
+            });
+            updateTotalPrice();
+            summaryBtn.disabled = !hasSelectedItem;
+        }
+
+        // ฟังก์ชันอัปเดตราคา
+        function updateTotalPrice() {
+            let total = 0;
+            for (const name in order) {
+                const item = menuItems.find(i => i.name === name);
+                if (item) {
+                    total += order[name] * item.price;
+                }
+            }
+            totalPriceMenuElement.textContent = `${total} บาท`;
+            totalPriceSummaryElement.textContent = `${total} บาท`;
+        }
+
+        // ฟังก์ชันแสดงสรุปรายการ
+        function renderSummary() {
+            summaryItemsContainer.innerHTML = '';
+            for (const name in order) {
+                if (order[name] > 0) {
+                    const item = menuItems.find(i => i.name === name);
+                    const itemHtml = `
+                        <div class="flex justify-between items-center py-2 border-b last:border-b-0 border-red-200">
+                            <div class="text-red-700">${item.name} (${order[name]} x ${item.price} บาท)</div>
+                            <div class="font-semibold text-red-800">${order[name] * item.price} บาท</div>
+                        </div>
+                    `;
+                    summaryItemsContainer.innerHTML += itemHtml;
+                }
+            }
+        }
+
+        // ฟังก์ชันบันทึกรายการสั่งซื้อลงใน Firestore และคืนค่า docId
+        async function saveOrderToFirestore(orderData) {
+            try {
+                if (!userId) {
+                    console.error("User not authenticated.");
+                    return null;
+                }
+                const ordersCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/orders`);
+                const docRef = await addDoc(ordersCollectionRef, orderData);
+                return docRef.id;
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showModal("ข้อผิดพลาด", "ไม่สามารถบันทึกคำสั่งซื้อได้ กรุณาลองใหม่อีกครั้ง");
+                return null;
+            }
+        }
+
+        // ฟังก์ชันแสดงหน้าใบเสร็จ
+        function showBillPage(orderData) {
+            const now = new Date();
+            const dateString = now.toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' });
+            const timeString = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+            billOrderId.textContent = orderData.orderId;
+            billDate.textContent = `${dateString} ${timeString}`;
+            billCustomerName.textContent = orderData.customerInfo.name;
+            billCustomerPhone.textContent = orderData.customerInfo.phone;
+            billCustomerAddress.textContent = orderData.customerInfo.address;
+            billPaymentMethod.textContent = orderData.paymentMethod;
+            
+            billItemsContainer.innerHTML = '';
+            for (const name in orderData.items) {
+                if (orderData.items[name] > 0) {
+                    const item = menuItems.find(i => i.name === name);
+                    const itemHtml = `
+                        <div class="bill-item">
+                            <div class="flex-grow">${item.name} x ${orderData.items[name]}</div>
+                            <div>${orderData.items[name] * item.price} บาท</div>
+                        </div>
+                    `;
+                    billItemsContainer.innerHTML += itemHtml;
+                }
+            }
+            
+            billSubtotal.textContent = `${orderData.totalPrice} บาท`;
+            billDeliveryFee.textContent = `${orderData.deliveryFee} บาท`;
+            billGrandTotal.textContent = `${orderData.grandTotal} บาท`;
+
+            if (orderData.slipBase64Data) {
+                billSlipImage.src = orderData.slipBase64Data;
+                billSlipContainer.classList.remove('hidden');
+            } else {
+                billSlipContainer.classList.add('hidden');
+            }
+            
+            showPage('bill-page');
+            order = {}; // ล้างรายการสั่งซื้อหลังจากยืนยัน
+        }
+        
+        // ฟังก์ชันดึงประวัติการสั่งซื้อจาก Firestore และแสดงผล
+        async function fetchOrderHistory() {
+            if (!userId) {
+                console.error("User not authenticated.");
+                historyItemsContainer.innerHTML = '<p class="text-center text-red-500">ไม่สามารถโหลดประวัติได้ กรุณาลองใหม่อีกครั้ง</p>';
+                return;
+            }
+
+            try {
+                historyItemsContainer.innerHTML = '<p class="text-center text-red-500">กำลังโหลดประวัติ...</p>';
+                const ordersCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/orders`);
+                const querySnapshot = await getDocs(ordersCollectionRef);
+                
+                if (querySnapshot.empty) {
+                    historyItemsContainer.innerHTML = '<p class="text-center text-red-500">ไม่มีประวัติการสั่งซื้อ</p>';
+                    return;
+                }
+
+                historyItemsContainer.innerHTML = '';
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const orderDate = data.timestamp ? new Date(data.timestamp.toDate()).toLocaleString('th-TH') : 'ไม่ระบุ';
+                    let orderSummary = '';
+                    for (const item in data.items) {
+                        const price = menuItems.find(i => i.name === item)?.price || 0;
+                        orderSummary += `<div>${item} x ${data.items[item]} (${price * data.items[item]} บาท)</div>`;
+                    }
+
+                    let slipHtml = '';
+                    if (data.slipBase64Data) {
+                        slipHtml = `
+                            <div class="mt-4 text-center border-t border-red-200 pt-4">
+                                <p class="text-sm font-semibold text-red-700 mb-2">หลักฐานการโอนเงิน</p>
+                                <img src="${data.slipBase64Data}" alt="สลิปหลักฐาน" class="mx-auto rounded-lg shadow-md max-w-full h-auto">
+                            </div>
+                        `;
+                    }
+                    
+                    const historyHtml = `
+                        <div class="bg-red-50 rounded-lg p-4 shadow-sm">
+                            <div class="font-bold text-red-800 mb-2">คำสั่งซื้อเมื่อ: ${orderDate}</div>
+                            <div class="text-sm text-red-600 mb-2">หมายเลขคำสั่งซื้อ: ${data.orderId}</div>
+                            <div class="border-t border-red-200 pt-2">
+                                ${orderSummary}
+                            </div>
+                            ${slipHtml}
+                            <div class="text-right font-bold text-lg mt-2 text-red-700">รวมทั้งหมด: ${data.totalPrice} บาท</div>
+                        </div>
+                    `;
+                    historyItemsContainer.innerHTML += historyHtml;
+                });
+            } catch (e) {
+                console.error("Error fetching documents: ", e);
+                historyItemsContainer.innerHTML = '<p class="text-center text-red-500">เกิดข้อผิดพลาดในการโหลดประวัติ</p>';
+            }
+        }
+        
+        // Event Listeners
+        menuContainer.addEventListener('click', (event) => {
+            const button = event.target.closest('.quantity-btn');
+            if (!button) return;
+            const itemName = button.dataset.name;
+            const action = button.textContent.trim();
+            if (action === '+') {
+                order[itemName] = (order[itemName] || 0) + 1;
+            } else if (action === '-') {
+                if (order[itemName] > 0) {
+                    order[itemName] -= 1;
+                }
+                if (order[itemName] === 0) {
+                    delete order[itemName];
+                }
+            }
+            renderMenuItems();
+        });
+
+        summaryBtn.addEventListener('click', () => {
+            renderSummary();
+            showPage('summary-page');
+        });
+
+        backToMenuBtn.addEventListener('click', () => {
+            showPage('menu-page');
+        });
+
+        deliveryBtn.addEventListener('click', () => {
+            if (Object.keys(order).length > 0) {
+                showPage('delivery-page');
+            }
+        });
+
+        deliveryForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const address = document.getElementById('address').value;
+            deliveryInfo = { name, phone, address };
+            showPage('payment-page');
+        });
+
+        payTransferBtn.addEventListener('click', () => {
+            qrCodeSection.classList.remove('hidden');
+            slipUpload.disabled = false;
+            confirmPaymentBtn.disabled = true;
+        });
+
+        payCodBtn.addEventListener('click', async () => {
+            const subtotal = parseInt(totalPriceSummaryElement.textContent.replace(' บาท', ''));
+            const grandTotal = subtotal + DELIVERY_FEE;
+            const orderId = generateOrderId();
+            const orderData = {
+                orderId: orderId,
+                items: order,
+                customerInfo: deliveryInfo,
+                totalPrice: subtotal,
+                deliveryFee: DELIVERY_FEE,
+                grandTotal: grandTotal,
+                timestamp: new Date(),
+                paymentMethod: "เงินสดปลายทาง (COD)"
+            };
+            await saveOrderToFirestore(orderData);
+            showBillPage(orderData);
+        });
+
+        slipUpload.addEventListener('change', (event) => {
+            if (event.target.files.length > 0) {
+                confirmPaymentBtn.disabled = false;
+            } else {
+                confirmPaymentBtn.disabled = true;
+            }
+        });
+
+        confirmPaymentBtn.addEventListener('click', async () => {
+            const subtotal = parseInt(totalPriceSummaryElement.textContent.replace(' บาท', ''));
+            const grandTotal = subtotal + DELIVERY_FEE;
+            const orderId = generateOrderId();
+            
+            const file = slipUpload.files[0];
+            let slipBase64Data = null;
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    slipBase64Data = e.target.result;
+                    const orderData = {
+                        orderId: orderId,
+                        items: order,
+                        customerInfo: deliveryInfo,
+                        totalPrice: subtotal,
+                        deliveryFee: DELIVERY_FEE,
+                        grandTotal: grandTotal,
+                        timestamp: new Date(),
+                        paymentMethod: "สแกน QR Code / โอนเงิน",
+                        slipBase64Data: slipBase64Data
+                    };
+                    await saveOrderToFirestore(orderData);
+                    showBillPage(orderData);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                const orderData = {
+                    orderId: orderId,
+                    items: order,
+                    customerInfo: deliveryInfo,
+                    totalPrice: subtotal,
+                    deliveryFee: DELIVERY_FEE,
+                    grandTotal: grandTotal,
+                    timestamp: new Date(),
+                    paymentMethod: "สแกน QR Code / โอนเงิน",
+                };
+                await saveOrderToFirestore(orderData);
+                showBillPage(orderData);
+            }
+        });
+
+        historyBtn.addEventListener('click', () => {
+            showPage('history-page');
+            fetchOrderHistory();
+        });
+        
+        backFromHistoryBtn.addEventListener('click', () => {
+            showPage('menu-page');
+        });
+        
+        backFromBillBtn.addEventListener('click', () => {
+            showPage('menu-page');
+            renderMenuItems();
+        });
+        
+        backToSummaryBtn.addEventListener('click', () => {
+            showPage('summary-page');
+        });
+
+        backToDeliveryBtn.addEventListener('click', () => {
+            showPage('delivery-page');
+        });
+
+        modalCloseBtn.addEventListener('click', () => {
+            infoModal.classList.add('hidden');
+        });
+
+        // เริ่มต้นแอป
+        initAuth().then(() => {
+            renderMenuItems();
+        });
+    </script>
+</body>
+</html>
