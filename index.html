@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสั่งซื้อหมูสดและหมูหมัก</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Sarabun', sans-serif;
+            background-color: #fef2f2;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .item-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #fee2e2;
+        }
+        .item-card:last-child {
+            border-bottom: none;
+        }
+        .item-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-right: 15px;
+        }
+        .quantity-control {
+            display: flex;
+            align-items: center;
+        }
+        .quantity-btn {
+            background-color: #fca5a5;
+            color: white;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.25rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .quantity-btn:hover {
+            transform: scale(1.1);
+        }
+        .btn {
+            background-color: #dc2626;
+            color: white;
+            border-radius: 12px;
+            padding: 12px 24px;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn:hover {
+            background-color: #b91c1c;
+            transform: translateY(-2px);
+        }
+        .back-btn {
+            background-color: #d1d5db;
+            color: #4b5563;
+        }
+        .back-btn:hover {
+            background-color: #9ca3af;
+        }
+        .disabled-btn {
+            background-color: #d1d5db;
+            cursor: not-allowed;
+        }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        .modal {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal-content {
+            background-color: white;
+            border-radius: 12px;
+        }
+        .category-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #8b5cf6;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 0.5rem;
+        }
+        .slip-image {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, collection, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId;
+
+        window.initAuth = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is not available. Firestore will not work.");
+                    return;
+                }
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("User signed in with UID:", userId);
+                        document.getElementById('user-id-display').textContent = `ผู้ใช้งาน ID: ${userId}`;
+                        renderMenuItems();
+                    } else {
+                        console.log("No user is signed in.");
+                    }
+                });
+
+                return { db, auth };
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+            }
+        };
+
+        window.saveOrderToFirestore = async (orderData) => {
+            if (!db || !userId) {
+                console.error("Firestore or User ID is not available.");
+                return;
+            }
+            try {
+                const docRef = await addDoc(collection(db, `artifacts/${appId}/public/data/orders`), {
+                    ...orderData,
+                    userId: userId
+                });
+                console.log("Order saved with ID:", docRef.id);
+            } catch (e) {
+                console.error("Error adding document: ", e);
+            }
+        };
+
+        window.fetchOrderHistory = async () => {
+            if (!db || !userId) {
+                console.error("Firestore or User ID is not available.");
+                return;
+            }
+            const historyContainer = document.getElementById('history-content');
+            historyContainer.innerHTML = '';
+            try {
+                // Sorting data in JavaScript after fetching to avoid Firestore index errors
+                const querySnapshot = await getDocs(collection(db, `artifacts/${appId}/public/data/orders`));
+                const allOrders = [];
+                querySnapshot.forEach((doc) => {
+                    allOrders.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Sort by timestamp in descending order
+                allOrders.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+                if (allOrders.length === 0) {
+                    historyContainer.innerHTML = '<p class="text-center text-gray-500">ไม่พบประวัติการสั่งซื้อ</p>';
+                    return;
+                }
+
+                allOrders.forEach((order) => {
+                    const orderDate = order.timestamp.toDate().toLocaleString('th-TH');
+                    let itemsHtml = order.items.map(item => `<p>${item.name} (${item.quantity}) - ${item.price} บาท</p>`).join('');
+                    const slipHtml = order.slipBase64Data ? `<p class="font-bold mt-4">สลิปหลักฐานการโอนเงิน:</p><img src="${order.slipBase64Data}" alt="Slip" class="slip-image">` : '';
+                    const orderCard = `
+                        <div class="card p-4 my-4">
+                            <h3 class="font-bold text-lg mb-2">คำสั่งซื้อ #${order.id.substring(0, 8)}</h3>
+                            <p><strong>ผู้สั่งซื้อ:</strong> ${order.customerInfo.name}</p>
+                            <p><strong>วันที่:</strong> ${orderDate}</p>
+                            <p><strong>รวม:</strong> ${order.grandTotal} บาท</p>
+                            <p><strong>สถานะ:</strong> <strong>${order.paymentMethod}</strong></p>
+                            <p class="font-bold mt-2">รายการ:</p>
+                            ${itemsHtml}
+                            ${slipHtml}
+                        </div>
+                    `;
+                    historyContainer.innerHTML += orderCard;
+                });
+            } catch (e) {
+                console.error("Error fetching documents: ", e);
+                historyContainer.innerHTML = '<p class="text-center text-red-500">เกิดข้อผิดพลาดในการโหลดประวัติ</p>';
+            }
+        };
+
+        window.showBillPage = (orderData) => {
+            const billPage = document.getElementById('bill-page');
+            const billContent = document.getElementById('bill-content');
+
+            let itemsHtml = Object.values(orderData.items).map(item => `
+                <div class="flex justify-between">
+                    <p>${item.name} x ${item.quantity}</p>
+                    <p>${item.price} บาท</p>
+                </div>
+            `).join('');
+
+            const slipHtml = orderData.slipBase64Data ? `
+                <div class="mt-4 text-center">
+                    <p class="text-lg font-bold mb-2">สลิปหลักฐาน</p>
+                    <img src="${orderData.slipBase64Data}" alt="Slip" class="slip-image mx-auto">
+                </div>
+            ` : '';
+
+            billContent.innerHTML = `
+                <div class="text-center mb-4">
+                    <h2 class="text-2xl font-bold text-red-600 mb-2">ใบเสร็จรับเงิน</h2>
+                    <p class="text-sm text-gray-600">NP อาหารแช่แข็ง</p>
+                </div>
+                <div class="border-t border-b py-4 mb-4">
+                    <p><strong>ชื่อ-สกุล:</strong> ${orderData.customerInfo.name}</p>
+                    <p><strong>เบอร์โทร:</strong> ${orderData.customerInfo.phone}</p>
+                    <p><strong>ที่อยู่:</strong> ${orderData.customerInfo.address}</p>
+                    ${orderData.customerInfo.floor ? `<p><strong>ชั้น:</strong> ${orderData.customerInfo.floor}</p>` : ''}
+                </div>
+                <div class="mb-4">
+                    <p class="font-bold text-lg mb-2">รายละเอียดรายการ</p>
+                    ${itemsHtml}
+                    <div class="flex justify-between font-bold mt-4 border-t pt-2">
+                        <span>รวมทั้งหมด:</span>
+                        <span>${orderData.grandTotal} บาท</span>
+                    </div>
+                </div>
+                ${slipHtml}
+                <div class="text-center p-4 rounded-lg">
+                    <p class="text-lg font-bold mb-2">สแกนเพื่อสะสมแต้ม</p>
+                    <img src="https://placehold.co/200x200" alt="QR Code" class="mx-auto rounded-lg shadow-lg">
+                    <p class="text-xs text-gray-500 mt-2">QR Code สำหรับการชำระเงิน</p>
+                </div>
+                <p class="text-center text-gray-600 mt-4">ขอบคุณที่ใช้บริการ!</p>
+            `;
+            showPage('bill-page');
+        }
+
+        // เริ่มต้นแอป
+        initAuth().then(() => {
+            renderMenuItems();
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center py-4">
+            <h1 class="text-4xl font-bold text-red-600">NP อาหารแช่แข็ง</h1>
+            <p class="text-sm text-gray-600" id="user-id-display"></p>
+        </header>
+
+        <!-- Menu Page -->
+        <div id="menu-page" class="page active">
+            <h2 class="text-3xl font-bold text-center text-purple-600 mb-6">เมนูหมูสดและหมูหมัก</h2>
+            <div id="menu-items" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <!-- Menu items will be rendered here -->
+            </div>
+            <div class="mt-8 flex justify-between">
+                <button id="cart-btn" class="btn">ตะกร้าสินค้า</button>
+                <button id="history-btn" class="btn back-btn">ประวัติการสั่งซื้อ</button>
+            </div>
+        </div>
+
+        <!-- Cart Page -->
+        <div id="cart-page" class="page">
+            <div class="card">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">ตะกร้าสินค้า</h2>
+                <div id="cart-items">
+                    <!-- Cart items will be rendered here -->
+                </div>
+                <div id="cart-summary" class="mt-4 font-bold text-lg border-t pt-4">
+                    <!-- Cart summary will be rendered here -->
+                </div>
+            </div>
+            <div class="flex justify-between mt-4">
+                <button id="back-from-cart-btn" class="btn back-btn">กลับไปเมนู</button>
+                <button id="checkout-btn" class="btn">ชำระเงิน</button>
+            </div>
+        </div>
+
+        <!-- Delivery Page -->
+        <div id="delivery-page" class="page">
+            <div class="card">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">ข้อมูลการจัดส่ง</h2>
+                <form id="delivery-form">
+                    <div class="mb-4">
+                        <label for="name" class="block text-gray-700 font-bold mb-2">ชื่อ-สกุล</label>
+                        <input type="text" id="name" name="name" class="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-300" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="phone" class="block text-gray-700 font-bold mb-2">เบอร์โทรศัพท์</label>
+                        <input type="tel" id="phone" name="phone" class="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-300" required>
+                    </div>
+                    <div class="mb-4">
+                        <label for="address" class="block text-gray-700 font-bold mb-2">ที่อยู่</label>
+                        <textarea id="address" name="address" rows="3" class="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-300" required></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label for="floor" class="block text-gray-700 font-bold mb-2">ชั้น (ถ้ามี)</label>
+                        <input type="text" id="floor" name="floor" class="w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-red-300">
+                    </div>
+                    <div class="flex justify-between mt-4">
+                        <button type="button" id="back-from-delivery-btn" class="btn back-btn">ย้อนกลับ</button>
+                        <button type="submit" class="btn">ยืนยันข้อมูล</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Summary Page -->
+        <div id="summary-page" class="page">
+            <div class="card">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">สรุปคำสั่งซื้อ</h2>
+                <div id="summary-items">
+                    <!-- Summary items will be rendered here -->
+                </div>
+                <div id="summary-details" class="mt-4 border-t pt-4">
+                    <!-- Summary details (subtotal, delivery fee, grand total) will be rendered here -->
+                </div>
+            </div>
+            <div class="flex justify-between mt-4">
+                <button id="back-from-summary-btn" class="btn back-btn">ย้อนกลับ</button>
+                <button id="proceed-to-payment-btn" class="btn">ดำเนินการต่อ</button>
+            </div>
+        </div>
+
+        <!-- Payment Page -->
+        <div id="payment-page" class="page">
+            <div class="card text-center">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">การชำระเงิน</h2>
+                <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                    <p class="text-lg font-semibold">ยอดรวมที่ต้องชำระ:</p>
+                    <p id="total-price-summary" class="text-4xl font-bold text-red-600 mt-2">0 บาท</p>
+                </div>
+                <div class="mb-4">
+                    <p class="text-lg font-semibold mb-2">สแกน QR Code เพื่อชำระเงิน</p>
+                    <img id="qr-code-img" src="https://placehold.co/250x250/fff/000?text=QR%20Code" alt="QR Code" class="mx-auto rounded-lg shadow-lg">
+                </div>
+                <div class="mt-6 flex flex-col items-center">
+                    <label for="slip-upload" class="bg-red-500 text-white rounded-xl py-2 px-4 shadow-lg hover:bg-red-600 transition duration-300 cursor-pointer">
+                        อัปโหลดสลิป
+                    </label>
+                    <input type="file" id="slip-upload" accept="image/*" class="hidden">
+                    <p id="file-name" class="mt-2 text-sm text-gray-600">ยังไม่มีไฟล์ที่เลือก</p>
+                    <p id="upload-status" class="mt-2 text-sm text-gray-600"></p>
+                </div>
+            </div>
+            <div class="flex justify-between mt-4">
+                <button id="back-to-delivery-btn" class="bg-gray-500 text-white rounded-xl py-2 px-4 shadow-lg hover:bg-gray-600 transition duration-300">กลับไปหน้าจัดส่ง</button>
+                <button id="confirm-payment-btn" class="btn disabled-btn" disabled>ยืนยันการชำระเงิน</button>
+            </div>
+        </div>
+
+        <!-- Bill Page -->
+        <div id="bill-page" class="page">
+            <div class="card text-left">
+                <div id="bill-content">
+                    <!-- Bill content will be rendered here -->
+                </div>
+            </div>
+            <div class="flex justify-center mt-4">
+                <button id="back-from-bill-btn" class="btn">กลับหน้าหลัก</button>
+            </div>
+        </div>
+
+        <!-- History Page -->
+        <div id="history-page" class="page">
+            <div class="card">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">ประวัติการสั่งซื้อ</h2>
+                <div id="history-content">
+                    <!-- Order history will be rendered here -->
+                </div>
+            </div>
+            <div class="flex justify-center mt-4">
+                <button id="back-from-history-btn" class="btn back-btn">กลับไปเมนู</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" class="modal fixed inset-0 flex items-center justify-center p-4 hidden">
+        <div class="modal-content card max-w-sm w-full text-center">
+            <h3 id="modal-title" class="text-xl font-bold mb-2"></h3>
+            <p id="modal-message" class="text-gray-700 mb-4"></p>
+            <button id="modal-close-btn" class="btn">ตกลง</button>
+        </div>
+    </div>
+
+    <script>
+        // Data for menu items
+        const menuItems = [
+            {
+                id: 1, name: "สามชั้นสไลด์", description: "500 กรัม", price: 149,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สามชั้นสไลด์"
+            },
+            {
+                id: 2, name: "สามชั้นกลม", description: "500 กรัม", price: 149,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สามชั้นกลม"
+            },
+            {
+                id: 3, name: "สามชั้น 3 แถว", description: "500 กรัม", price: 149,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สามชั้น3แถว"
+            },
+            {
+                id: 4, name: "สามชั้นหมักนุ่ม", description: "1 กิโลกรัม", price: 189,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สามชั้นหมัก"
+            },
+            {
+                id: 5, name: "สันคอพรีเมียม", description: "1 กิโลกรัม", price: 245,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สันคอ"
+            },
+            {
+                id: 6, name: "สันคอกัปตัน", description: "500 กรัม", price: 145,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=สันคอ"
+            },
+            {
+                id: 7, name: "เบคอน", description: "500 กรัม", price: 139,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=เบคอน"
+            },
+            {
+                id: 8, name: "หมูหมักนุ่ม", description: "1 กิโลกรัม", price: 105,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูหมักนุ่ม"
+            },
+            {
+                id: 9, name: "หมูหมักงา", description: "1 กิโลกรัม", price: 105,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูหมักงา"
+            },
+            {
+                id: 10, name: "หมูหมักพริกไทยดำ", description: "1 กิโลกรัม", price: 105,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูหมักพริกไทยดำ"
+            },
+            {
+                id: 11, name: "หมูหมักนุ่ม MPork", description: "", price: 119,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูMPork"
+            },
+            {
+                id: 12, name: "หมูหมักงา MPork", description: "", price: 119,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูMPork"
+            },
+            {
+                id: 13, name: "หมูหมักพริกไทยดำ MPork", description: "", price: 119,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูMPork"
+            },
+            {
+                id: 14, name: "ตับ", description: "1 กิโลกรัม", price: 125,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=ตับ"
+            },
+            {
+                id: 15, name: "หมูบด", description: "1 กิโลกรัม", price: 100,
+                image: "https://placehold.co/150x150/fca5a5/ffffff?text=หมูบด"
+            }
+        ];
+
+        let order = {};
+        const DELIVERY_FEE = 30;
+
+        // Elements
+        const menuPage = document.getElementById('menu-page');
+        const cartPage = document.getElementById('cart-page');
+        const deliveryPage = document.getElementById('delivery-page');
+        const summaryPage = document.getElementById('summary-page');
+        const paymentPage = document.getElementById('payment-page');
+        const billPage = document.getElementById('bill-page');
+        const historyPage = document.getElementById('history-page');
+        const menuItemsContainer = document.getElementById('menu-items');
+        const cartItemsContainer = document.getElementById('cart-items');
+        const cartSummaryElement = document.getElementById('cart-summary');
+        const summaryItemsContainer = document.getElementById('summary-items');
+        const summaryDetailsElement = document.getElementById('summary-details');
+        const totalPriceSummaryElement = document.getElementById('total-price-summary');
+        const deliveryForm = document.getElementById('delivery-form');
+        const slipUploadInput = document.getElementById('slip-upload');
+        const fileNameDisplay = document.getElementById('file-name');
+        const confirmPaymentBtn = document.getElementById('confirm-payment-btn');
+        const uploadStatusElement = document.getElementById('upload-status');
+        const qrCodeImg = document.getElementById('qr-code-img');
+        const infoModal = document.getElementById('info-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+
+        // Buttons
+        const cartBtn = document.getElementById('cart-btn');
+        const historyBtn = document.getElementById('history-btn');
+        const backFromCartBtn = document.getElementById('back-from-cart-btn');
+        const checkoutBtn = document.getElementById('checkout-btn');
+        const backFromDeliveryBtn = document.getElementById('back-from-delivery-btn');
+        const backFromSummaryBtn = document.getElementById('back-from-summary-btn');
+        const proceedToPaymentBtn = document.getElementById('proceed-to-payment-btn');
+        const backToDeliveryBtn = document.getElementById('back-to-delivery-btn');
+        const backFromBillBtn = document.getElementById('back-from-bill-btn');
+        const backFromHistoryBtn = document.getElementById('back-from-history-btn');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        // State & Utility Functions
+        const showPage = (pageId) => {
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            document.getElementById(pageId).classList.add('active');
+        };
+
+        const showModal = (title, message) => {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            infoModal.classList.remove('hidden');
+        };
+
+        const updateCartBadge = () => {
+            const totalItems = Object.values(order).reduce((sum, item) => sum + item.quantity, 0);
+            const cartBtn = document.getElementById('cart-btn');
+            if (totalItems > 0) {
+                cartBtn.textContent = `ตะกร้าสินค้า (${totalItems})`;
+            } else {
+                cartBtn.textContent = 'ตะกร้าสินค้า';
+            }
+        };
+
+        const renderMenuItems = () => {
+            menuItemsContainer.innerHTML = '';
+            menuItems.forEach(item => {
+                const itemCard = `
+                    <div class="card p-3 flex flex-col justify-between items-center text-center">
+                        <img src="${item.image}" alt="${item.name}" class="w-24 h-24 object-cover rounded-lg mb-2">
+                        <h3 class="text-base font-bold">${item.name}</h3>
+                        ${item.description ? `<p class="text-xs text-gray-600">${item.description}</p>` : ''}
+                        <p class="text-red-600 text-sm font-semibold my-2">${item.price} บาท</p>
+                        <button class="btn add-to-cart-btn py-2 px-4 text-sm" data-id="${item.id}">เพิ่มลงตะกร้า</button>
+                    </div>
+                `;
+                menuItemsContainer.innerHTML += itemCard;
+            });
+            attachAddToCartListeners();
+        };
+
+        const renderCartItems = () => {
+            cartItemsContainer.innerHTML = '';
+            let subtotal = 0;
+            const items = Object.values(order);
+            if (items.length === 0) {
+                cartItemsContainer.innerHTML = '<p class="text-center text-gray-500">ไม่มีสินค้าในตะกร้า</p>';
+                checkoutBtn.classList.add('disabled-btn');
+                checkoutBtn.disabled = true;
+            } else {
+                checkoutBtn.classList.remove('disabled-btn');
+                checkoutBtn.disabled = false;
+                items.forEach(item => {
+                    const itemTotal = item.price * item.quantity;
+                    subtotal += itemTotal;
+                    const cartItem = `
+                        <div class="item-card">
+                            <div class="flex items-center">
+                                <img src="${item.image}" alt="${item.name}" class="item-image">
+                                <div>
+                                    <p class="font-bold">${item.name}</p>
+                                    <p class="text-sm text-gray-600">${item.price} บาท</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button class="quantity-btn decrease-btn" data-id="${item.id}">-</button>
+                                <span class="font-bold">${item.quantity}</span>
+                                <button class="quantity-btn increase-btn" data-id="${item.id}">+</button>
+                            </div>
+                            <p class="font-bold">${itemTotal} บาท</p>
+                        </div>
+                    `;
+                    cartItemsContainer.innerHTML += cartItem;
+                });
+            }
+            cartSummaryElement.innerHTML = `รวม: <span class="text-red-600 font-bold">${subtotal}</span> บาท`;
+            updateCartBadge();
+            attachCartItemListeners();
+        };
+
+        const renderSummaryPage = () => {
+            summaryItemsContainer.innerHTML = '';
+            let subtotal = 0;
+            Object.values(order).forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                subtotal += itemTotal;
+                summaryItemsContainer.innerHTML += `
+                    <div class="flex justify-between py-1">
+                        <span>${item.name} x ${item.quantity}</span>
+                        <span>${itemTotal} บาท</span>
+                    </div>
+                `;
+            });
+
+            const grandTotal = subtotal + DELIVERY_FEE;
+            summaryDetailsElement.innerHTML = `
+                <div class="flex justify-between">
+                    <span class="font-semibold">ยอดรวมสินค้า:</span>
+                    <span>${subtotal} บาท</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="font-semibold">ค่าจัดส่ง:</span>
+                    <span>${DELIVERY_FEE} บาท</span>
+                </div>
+                <div class="flex justify-between font-bold text-xl text-red-600 mt-2">
+                    <span>ยอดรวมทั้งหมด:</span>
+                    <span>${grandTotal} บาท</span>
+                </div>
+            `;
+        };
+
+        const renderPaymentPage = () => {
+            const grandTotal = Object.values(order).reduce((sum, item) => sum + (item.price * item.quantity), 0) + DELIVERY_FEE;
+            totalPriceSummaryElement.textContent = `${grandTotal} บาท`;
+            confirmPaymentBtn.disabled = true;
+            confirmPaymentBtn.classList.add('disabled-btn');
+            fileNameDisplay.textContent = 'ยังไม่มีไฟล์ที่เลือก';
+            uploadStatusElement.textContent = '';
+        };
+
+        // Event Listeners
+        const attachAddToCartListeners = () => {
+            document.querySelectorAll('.add-to-cart-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const id = parseInt(e.target.dataset.id);
+                    const item = menuItems.find(i => i.id === id);
+                    if (order[id]) {
+                        order[id].quantity++;
+                    } else {
+                        order[id] = { ...item, quantity: 1 };
+                    }
+                    updateCartBadge();
+                    showModal('เพิ่มสินค้าแล้ว', `${item.name} ถูกเพิ่มลงในตะกร้า`);
+                });
+            });
+        };
+
+        const attachCartItemListeners = () => {
+            document.querySelectorAll('.decrease-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const id = parseInt(e.target.dataset.id);
+                    if (order[id] && order[id].quantity > 1) {
+                        order[id].quantity--;
+                    } else {
+                        delete order[id];
+                    }
+                    renderCartItems();
+                });
+            });
+
+            document.querySelectorAll('.increase-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const id = parseInt(e.target.dataset.id);
+                    if (order[id]) {
+                        order[id].quantity++;
+                        renderCartItems();
+                    }
+                });
+            });
+        };
+
+        cartBtn.addEventListener('click', () => {
+            showPage('cart-page');
+            renderCartItems();
+        });
+
+        backFromCartBtn.addEventListener('click', () => {
+            showPage('menu-page');
+        });
+
+        checkoutBtn.addEventListener('click', () => {
+            showPage('delivery-page');
+        });
+
+        backFromDeliveryBtn.addEventListener('click', () => {
+            showPage('cart-page');
+            renderCartItems();
+        });
+
+        deliveryForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const address = document.getElementById('address').value;
+            const floor = document.getElementById('floor').value;
+
+            localStorage.setItem('deliveryInfo', JSON.stringify({ name, phone, address, floor }));
+            showPage('summary-page');
+            renderSummaryPage();
+        });
+
+        backFromSummaryBtn.addEventListener('click', () => {
+            showPage('delivery-page');
+        });
+
+        proceedToPaymentBtn.addEventListener('click', () => {
+            showPage('payment-page');
+            renderPaymentPage();
+        });
+
+        slipUploadInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = `ไฟล์ที่เลือก: ${file.name}`;
+                confirmPaymentBtn.disabled = false;
+                confirmPaymentBtn.classList.remove('disabled-btn');
+            } else {
+                fileNameDisplay.textContent = 'ยังไม่มีไฟล์ที่เลือก';
+                confirmPaymentBtn.disabled = true;
+                confirmPaymentBtn.classList.add('disabled-btn');
+            }
+        });
+
+        confirmPaymentBtn.addEventListener('click', async () => {
+            uploadStatusElement.textContent = 'กำลังอัปโหลด...';
+            const file = slipUploadInput.files[0];
+            if (!file) {
+                showModal('ข้อผิดพลาด', 'กรุณาอัปโหลดสลิปการโอนเงิน');
+                uploadStatusElement.textContent = 'กรุณาเลือกไฟล์';
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                const base64Data = event.target.result;
+                const deliveryInfo = JSON.parse(localStorage.getItem('deliveryInfo'));
+                const subtotal = Object.values(order).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                const grandTotal = subtotal + DELIVERY_FEE;
+                
+                const orderData = {
+                    items: Object.values(order),
+                    customerInfo: deliveryInfo,
+                    totalPrice: subtotal,
+                    deliveryFee: DELIVERY_FEE,
+                    grandTotal: grandTotal,
+                    timestamp: new Date(),
+                    paymentMethod: "QR Code / โอนเงิน",
+                    slipBase64Data: base64Data
+                };
+                await saveOrderToFirestore(orderData);
+                showBillPage(orderData);
+                order = {}; // Clear the order
+                updateCartBadge();
+                uploadStatusElement.textContent = '';
+            };
+            reader.readAsDataURL(file);
+        });
+
+        historyBtn.addEventListener('click', () => {
+            showPage('history-page');
+            fetchOrderHistory();
+        });
+        
+        backFromHistoryBtn.addEventListener('click', () => {
+            showPage('menu-page');
+        });
+
+        backFromBillBtn.addEventListener('click', () => {
+            showPage('menu-page');
+            renderMenuItems();
+        });
+        
+        backToDeliveryBtn.addEventListener('click', () => {
+            showPage('delivery-page');
+        });
+        
+        modalCloseBtn.addEventListener('click', () => {
+            infoModal.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>
